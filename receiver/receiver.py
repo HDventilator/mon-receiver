@@ -8,6 +8,10 @@ from glob import glob
 from serial import Serial, EIGHTBITS, PARITY_NONE, STOPBITS_ONE
 import time
 from binascii import crc32
+from threading import Thread
+from queue import Queue
+from datetime import datetime
+logging.getLogger("urllib3").setLevel(logging.INFO)
 
 class SerialListener:
     def add_data(self, raw_data):
@@ -123,13 +127,16 @@ class ProtocolParser(SerialListener):
     def _unpack_data(self, data):
         try:
             name, value, crc = struct.unpack("<6sfI", data)
+            ascii_name = name.decode('ASCII')
         except struct.error:
             logging.debug("Received data was not well-formed")
-        except Exception:
+            raise ValueError("Received data was not well-formed")
+        except Exception as exc:
             logging.error("Unexpected exception occurred, see stacktrace:", exc_info=True)
+            raise exc
 
         return {
-            'name': name.decode('ASCII'),
+            'name': ascii_name,
             'value': value,
             'crc': crc
         }
@@ -147,13 +154,19 @@ class ProtocolParser(SerialListener):
             data = cobs.decode(packet)
         except cobs.DecodeError:
             logging.debug("Received data was not COBS-decodable")
+            return
         except Exception:
             logging.error("Unexpected exception occurred, see stacktrace", exc_info=True)
+            return
 
         try:
             parsed_data = self._unpack_data(data)
         except Exception:
             logging.error("Unexpected exception occurred, see stacktrace", exc_info=True)
+            return
+
+        if not parsed_data:
+            return
 
         if not self._check_crc(data, parsed_data):
             logging.debug("crc for received packet did not match — discarding")
@@ -175,7 +188,67 @@ class ProtocolParser(SerialListener):
 
 class InfluxWriter(ProtocolListener):
     def __init__(self):
-        pass
+        self.client = None
+        self.queue = Queue(100)
+
+        self.connect = True
+        self._reconnect_thread = None
+
+        self.write = True
+        self._writer_thread = Thread(target=self._write)
+        self._writer_thread.start()
+
+    def run(self):
+        if self._reconnect_thread and self._reconnect_thread.isAlive():
+            return
+
+        self.connect = True
+        self._reconnect_thread = Thread(target=self._maintain_connection)
+        self._reconnect_thread.start()
+
+    def _try_connect(self):
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
+        try:
+            self.client = InfluxDBClient(database="hdvent_data")
+        except:
+            logging.warning("Could not connect to infux …")
+
+    def _maintain_connection(self):
+        while self.connect:
+            try:
+                self.client.ping()
+            except Exception:
+                self._try_connect()
+            time.sleep(1)
+
+    def _write(self):
+        points = []
+        while self.write:
+            item = self.queue.get()
+            points.append(item)
+            if len(points) >= 100:
+                try:
+                    self.client.write_points(points)
+                    points = []
+                except:
+                    logging.warning("Couldn’t write points to influx")
+
+            if len(points) > 500:
+                points = []
+                logging.warning("point-buffer too big, dropping data-points")
 
     def add_packet(self, packet):
-        pass
+        try:
+            self.queue.put_nowait({
+                "measurement": packet["name"],
+                "time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                "fields": {
+                    "value": packet["value"]
+                    }
+                })
+        except Exception as exc:
+            logging.warning("Couldnt add packet to queue")
