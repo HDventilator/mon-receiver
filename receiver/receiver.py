@@ -5,7 +5,7 @@ import logging
 from glob import glob
 from serial import Serial, EIGHTBITS, PARITY_NONE, STOPBITS_ONE
 import time
-from enum import Enum
+from binascii import crc32
 
 class SerialListener:
     def add_data(self, raw_data):
@@ -98,9 +98,9 @@ class ProtocolParser(SerialListener):
         if b"\x00" in self.buffer:
             self._parse_data()
 
-    def unpack_data(self, data):
+    def _unpack_data(self, data):
         try:
-            name, value, crc = struct.unpack("4sfI", data)
+            name, value, crc = struct.unpack("<6sfI", data)
         except struct.error:
             logging.debug("Received data was not well-formed")
         except Exception:
@@ -111,6 +111,9 @@ class ProtocolParser(SerialListener):
             'value': value,
             'crc': crc
         }
+
+    def _check_crc(self, packed_data, parsed_data):
+        return parsed_data['crc'] == crc32(packed_data[:10])
 
     def _parse_data(self):
         if not b"\x00" in self.buffer:
@@ -126,9 +129,13 @@ class ProtocolParser(SerialListener):
             logging.error("Unexpected exception occurred, see stacktrace", exc_info=True)
 
         try:
-            parsed_data = self.unpack_data(data)
+            parsed_data = self._unpack_data(data)
         except Exception:
             logging.error("Unexpected exception occurred, see stacktrace", exc_info=True)
+
+        if not self._check_crc(data, parsed_data):
+            logging.debug("crc for received packet did not match — discarding")
+            return
 
         self._notify(parsed_data)
 
