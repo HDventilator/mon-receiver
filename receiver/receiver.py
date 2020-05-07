@@ -44,8 +44,8 @@ class SerialReader:
             for device in devices:
                 if self._try_device(device):
                     try:
-                        self.port = Serial(self.device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=1)
                         self.device = device
+                        self.port = Serial(self.device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=1)
                         break
                     except Exception:
                         self.port = None
@@ -65,13 +65,12 @@ class SerialReader:
 
         while True:
             try:
-                data = self.port.read_until(expected=b"\x00")
+                data = self.port.read_until(b"\x00")
             except:
                 logging.debug("Could not read data from serial port, see stacktrace:", exc_info=True)
                 break
 
-            try:
-                self._notify(data)
+            self._notify(data)
 
     def _notify(self, data):
         if not self.listener:
@@ -89,7 +88,7 @@ class ProtocolListener:
     def add_packet(self, packet):
         raise NotImplementedError()
 
-class MonProtocol(SerialListener):
+class ProtocolParser(SerialListener):
     def __init__(self):
         self.buffer = b""
         self.listener = None
@@ -97,7 +96,7 @@ class MonProtocol(SerialListener):
     def add_data(self, raw_data):
         self.buffer += raw_data
         if b"\x00" in self.buffer:
-            self._parse()
+            self._parse_data()
 
     def unpack_data(self, data):
         try:
@@ -117,7 +116,7 @@ class MonProtocol(SerialListener):
         if not b"\x00" in self.buffer:
             return
 
-        packet, self.buffer = self.buffer.split("\x00")
+        packet, self.buffer = self.buffer.split(b"\x00")
 
         try:
             data = cobs.decode(packet)
@@ -144,3 +143,10 @@ class MonProtocol(SerialListener):
             self.listener.add_packet(data)
         except Exception:
             logging.info("ProtocolListener could not process packet, see stacktrace:", exc_info=True)
+
+class InfluxWriter(ProtocolListener):
+    def __init__(self):
+        pass
+
+    def add_packet(self, packet):
+        pass
