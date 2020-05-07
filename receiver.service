@@ -1,0 +1,10 @@
+[Unit]
+Description=The serial-port receiver and influxdb writer component
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/env python3 -m receiver
+
+[Install]
+WantedBy=multi-user.target
