@@ -1,3 +1,6 @@
+"""
+Runnable script implementing end2end serial2influx functionality
+"""
 from receiver import receiver
 
 serial_reader = receiver.SerialReader()
