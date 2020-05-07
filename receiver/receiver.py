@@ -136,9 +136,11 @@ class SerialReader:
         if not self.port:
             return
 
+        data = b""
+        self.port.read_until(b"\x00") # initial sync :-D
         while True:
             try:
-                data = self.port.read_until(b"\x00")
+                data = self.port.read(1+6+4+4) # since we assume we’ll stay somewhat synced, read what we assume is 1 packet
             except:
                 logging.debug(
                     "Could not read data from serial port, see stacktrace:",
@@ -206,6 +208,7 @@ class ProtocolParser(SerialListener):
         looks like a complete packet is received
         """
         self.buffer += raw_data
+
         if b"\x00" in self.buffer:
             self._parse_data()
 
@@ -240,7 +243,7 @@ class ProtocolParser(SerialListener):
         if b"\x00" not in self.buffer:
             return
 
-        packet, self.buffer = self.buffer.split(b"\x00")
+        packet, self.buffer = self.buffer.split(b"\x00", 1)
 
         try:
             data = cobs.decode(packet)
