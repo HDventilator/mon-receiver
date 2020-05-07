@@ -356,7 +356,7 @@ class InfluxWriter(ProtocolListener):
             points.append(item)
             if len(points) >= 100:
                 try:
-                    self.client.write_points(points)
+                    self.client.write_points(points, time_precision="n")
                     points = []
                 except:
                     logging.warning("Couldn’t write points to influx")
@@ -373,7 +373,7 @@ class InfluxWriter(ProtocolListener):
             self.queue.put_nowait(
                 {
                     "measurement": packet["name"],
-                    "time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "time": time.time_ns(),
                     "fields": {"value": packet["value"]},
                 }
             )
