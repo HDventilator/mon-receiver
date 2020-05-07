@@ -1,4 +1,5 @@
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
 
 from cobs import cobs
@@ -11,11 +12,14 @@ from binascii import crc32
 from threading import Thread
 from queue import Queue
 from datetime import datetime
+
 logging.getLogger("urllib3").setLevel(logging.INFO)
+
 
 class SerialListener:
     def add_data(self, raw_data):
         raise NotImplementedError()
+
 
 class SerialReader:
     def __init__(self):
@@ -25,10 +29,14 @@ class SerialReader:
 
     def _try_device(self, device):
         try:
-            port = Serial(device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=4)
+            port = Serial(
+                device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=4
+            )
             data = port.read(4)  # read more than the typical first 2-byte glitches
         except Exception:
-            logging.debug("Couldn’t probe serial port %s, see stacktrace:", device, exc_info=True)
+            logging.debug(
+                "Couldn’t probe serial port %s, see stacktrace:", device, exc_info=True
+            )
             return
         finally:
             try:
@@ -54,13 +62,23 @@ class SerialReader:
                 if self._try_device(device):
                     try:
                         self.device = device
-                        self.port = Serial(self.device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=1)
+                        self.port = Serial(
+                            self.device,
+                            115200,
+                            EIGHTBITS,
+                            PARITY_NONE,
+                            STOPBITS_ONE,
+                            timeout=1,
+                        )
                         logging.info("Using serial port %s", self.device)
                         break
                     except Exception:
                         self.port = None
                         self.device = None
-                        logging.debug("Could not open tested-good serial port %s, see stacktrace:", exc_info=True)
+                        logging.debug(
+                            "Could not open tested-good serial port %s, see stacktrace:",
+                            exc_info=True,
+                        )
                         time.sleep(1)
                         continue
 
@@ -86,7 +104,10 @@ class SerialReader:
             try:
                 data = self.port.read_until(b"\x00")
             except:
-                logging.debug("Could not read data from serial port, see stacktrace:", exc_info=True)
+                logging.debug(
+                    "Could not read data from serial port, see stacktrace:",
+                    exc_info=True,
+                )
                 self._clear_serialport()
                 return
 
@@ -97,12 +118,16 @@ class SerialReader:
             return
 
         if not isinstance(self.listener, SerialListener):
-            logging.warn("Registered SerialListener is not a SerialListener ... not forwarding data")
+            logging.warn(
+                "Registered SerialListener is not a SerialListener ... not forwarding data"
+            )
 
         try:
             self.listener.add_data(data)
         except Exception:
-            logging.info("SerialListener could not process data, see stacktrace:", exc_info=True)
+            logging.info(
+                "SerialListener could not process data, see stacktrace:", exc_info=True
+            )
 
     def run(self):
         while True:
@@ -113,6 +138,7 @@ class SerialReader:
 class ProtocolListener:
     def add_packet(self, packet):
         raise NotImplementedError()
+
 
 class ProtocolParser(SerialListener):
     def __init__(self):
@@ -127,22 +153,20 @@ class ProtocolParser(SerialListener):
     def _unpack_data(self, data):
         try:
             name, value, crc = struct.unpack("<6sfI", data)
-            ascii_name = name.decode('ASCII')
+            ascii_name = name.decode("ASCII")
         except struct.error:
             logging.debug("Received data was not well-formed")
             raise ValueError("Received data was not well-formed")
         except Exception as exc:
-            logging.error("Unexpected exception occurred, see stacktrace:", exc_info=True)
+            logging.error(
+                "Unexpected exception occurred, see stacktrace:", exc_info=True
+            )
             raise exc
 
-        return {
-            'name': ascii_name,
-            'value': value,
-            'crc': crc
-        }
+        return {"name": ascii_name, "value": value, "crc": crc}
 
     def _check_crc(self, packed_data, parsed_data):
-        return parsed_data['crc'] == crc32(packed_data[:10])
+        return parsed_data["crc"] == crc32(packed_data[:10])
 
     def _parse_data(self):
         if not b"\x00" in self.buffer:
@@ -156,13 +180,17 @@ class ProtocolParser(SerialListener):
             logging.debug("Received data was not COBS-decodable")
             return
         except Exception:
-            logging.error("Unexpected exception occurred, see stacktrace", exc_info=True)
+            logging.error(
+                "Unexpected exception occurred, see stacktrace", exc_info=True
+            )
             return
 
         try:
             parsed_data = self._unpack_data(data)
         except Exception:
-            logging.error("Unexpected exception occurred, see stacktrace", exc_info=True)
+            logging.error(
+                "Unexpected exception occurred, see stacktrace", exc_info=True
+            )
             return
 
         if not parsed_data:
@@ -179,12 +207,18 @@ class ProtocolParser(SerialListener):
             return
 
         if not isinstance(self.listener, ProtocolListener):
-            logging.warn("Registered ProtocolListener is not a ProtocolListener ... not forwarding data")
+            logging.warn(
+                "Registered ProtocolListener is not a ProtocolListener ... not forwarding data"
+            )
 
         try:
             self.listener.add_packet(data)
         except Exception:
-            logging.info("ProtocolListener could not process packet, see stacktrace:", exc_info=True)
+            logging.info(
+                "ProtocolListener could not process packet, see stacktrace:",
+                exc_info=True,
+            )
+
 
 class InfluxWriter(ProtocolListener):
     def __init__(self):
@@ -243,12 +277,12 @@ class InfluxWriter(ProtocolListener):
 
     def add_packet(self, packet):
         try:
-            self.queue.put_nowait({
-                "measurement": packet["name"],
-                "time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
-                "fields": {
-                    "value": packet["value"]
-                    }
-                })
+            self.queue.put_nowait(
+                {
+                    "measurement": packet["name"],
+                    "time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "fields": {"value": packet["value"]},
+                }
+            )
         except Exception as exc:
             logging.warning("Couldnt add packet to queue")
