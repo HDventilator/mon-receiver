@@ -1,7 +1,9 @@
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 from cobs import cobs
 from influxdb import InfluxDBClient
 import struct
-import logging
 from glob import glob
 from serial import Serial, EIGHTBITS, PARITY_NONE, STOPBITS_ONE
 import time
@@ -19,19 +21,21 @@ class SerialReader:
 
     def _try_device(self, device):
         try:
-            port = Serial(device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=1)
+            port = Serial(device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=4)
             data = port.read(4)  # read more than the typical first 2-byte glitches
         except Exception:
             logging.debug("Couldn’t probe serial port %s, see stacktrace:", device, exc_info=True)
+            return
         finally:
             try:
                 port.close()
             except:
-                logging.debug("Couldn’t close port %s after probing, see stacktrace:", device, exc_info=True)
+                return
 
         return len(data) == 4
 
     def _find_serialport(self):
+        logging.info("Searching for usable serial port")
         while self.device is None:
             devices = glob("/dev/ttyUSB*")
             # try in order of biggest port-number
@@ -42,10 +46,12 @@ class SerialReader:
                 continue
 
             for device in devices:
+                logging.debug("trying device %s", device)
                 if self._try_device(device):
                     try:
                         self.device = device
                         self.port = Serial(self.device, 115200, EIGHTBITS, PARITY_NONE, STOPBITS_ONE, timeout=1)
+                        logging.info("Using serial port %s", self.device)
                         break
                     except Exception:
                         self.port = None
@@ -59,6 +65,15 @@ class SerialReader:
 
             time.sleep(1)
 
+    def _clear_serialport(self):
+        try:
+            self.port.close()
+        except Exception:
+            pass
+
+        self.port = None
+        self.device = None
+
     def _read_from_serialport(self):
         if not self.port:
             return
@@ -68,7 +83,8 @@ class SerialReader:
                 data = self.port.read_until(b"\x00")
             except:
                 logging.debug("Could not read data from serial port, see stacktrace:", exc_info=True)
-                break
+                self._clear_serialport()
+                return
 
             self._notify(data)
 
@@ -83,6 +99,12 @@ class SerialReader:
             self.listener.add_data(data)
         except Exception:
             logging.info("SerialListener could not process data, see stacktrace:", exc_info=True)
+
+    def run(self):
+        while True:
+            self._find_serialport()
+            self._read_from_serialport()
+
 
 class ProtocolListener:
     def add_packet(self, packet):
