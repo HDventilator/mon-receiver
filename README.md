@@ -28,7 +28,7 @@ The package also contains a `setup.py` to install the package using pip:
 pip install git+https://github.com/HDventilator/mon-receiver.git@master
 python3 -m receiver
 ```
-There is also a systemd-service file, `receiver.service`, to be used on the raspeberrypi. Systemwide installation of the package is assumed.
+A systemd-service file can be found in the ![OS](https://github.com/HDventilator/mon-os-image) repo.
 
 ## Development tasks
 ### Update dependencies
