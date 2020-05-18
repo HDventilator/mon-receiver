@@ -331,7 +331,7 @@ class InfluxWriter(ProtocolListener):
             pass
 
         try:
-            self.client = InfluxDBClient(database="hdvent")
+            self.client = InfluxDBClient(database="hdvent", use_udp=True, udp_port=8089)
         except:
             logging.warning("Could not connect to infux …")
 
